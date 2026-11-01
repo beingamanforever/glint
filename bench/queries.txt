@@ -1,0 +1,22 @@
+# One pattern per line; a leading "-i " means case-insensitive.
+
+# rare literal: tiny posting lists, few candidates
+ThreadPoolExecutor
+# medium literal
+DeprecationWarning
+# very common literal: huge output, the index barely narrows
+return None
+# regex with two required literals
+def [a-z_]+_cache
+# literal, gap, literal
+raise ValueError.*dtype
+# alternation: OR of posting lists
+TODO|FIXME|XXX
+# CUDA kernels in a mostly-Python corpus
+__global__ void
+# case-insensitive: the index folds ASCII case
+-i httpconnection
+# no literal of 3+ characters: every file must be scanned
+[0-9]{4}-[0-9]{2}-[0-9]{2}
+# no match: the index should answer almost instantly
+glint_never_matches_this
