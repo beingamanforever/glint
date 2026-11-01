@@ -1,13 +1,19 @@
 # Hill-climbing glint
 
-Give a new model this prompt: "Read HILLCLIMB.md and make glint faster without breaking it."
 One round is one idea, measured before and after, kept only if it wins.
+Paste this into a fresh session at the repo root:
+
+> Read HILLCLIMB.md and run one round on glint.
+> Profile first, after a warm-up run, then change one thing, and keep it only if the bench says so.
+> Keep the code concise: the fewest clear lines, no new abstractions, no comments that restate the code.
+> Prefer deleting code to adding it. Report the profile, the hypothesis, the numbers before and after, and the line count.
 
 ## Rules
 
 - Output stays identical to ripgrep: every row of the bench says `same`.
 - One dependency (PCRE2), no daemon. Reach for the standard library or PCRE2 before writing your own.
 - `src/glint.cpp` stays under 450 lines, in its style: `using namespace std`, `all(x)`, `pb`, Allman braces, few comments.
+- Lines are a cost. A change that adds more than 20 lines must be at least 10% faster; one that deletes lines at equal speed is a win.
 - No tricks for one query. A change has to help a class of queries.
 - Same machine, same corpus, nothing else running.
 
@@ -21,9 +27,10 @@ python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json base.json
 
 ## Loop
 
-1. **Profile.** `./glint --stats PATTERN ~/glint-corpus` splits a query into `plan_ms` (stamps and lookups) and verify (`total_ms - plan_ms`).
+1. **Profile, warm.** Run each query once to warm the page cache and discard it, then profile the median of the next 5 runs.
+   `./glint --stats PATTERN ~/glint-corpus` splits a query into `plan_ms` (stamps and lookups) and verify (`total_ms - plan_ms`).
    Compare `candidates` with `matched_files`: a large gap means the index lets too much through.
-   For hot functions, use `sample glint 5` or Instruments on macOS, and `perf record -g` on Linux.
+   For hot functions, use `sample glint 5` or Instruments on macOS, and `perf record -g` on Linux, also after a warm-up run.
 2. **Pick the biggest measured cost.** Write down the number it should move.
 3. **Microbenchmark the idea** in a scratch file before touching glint. Most ideas die here, cheaply.
 4. **Change glint.** `make` must stay free of warnings.
@@ -31,7 +38,7 @@ python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json base.json
    ```bash
    python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json new.json --compare base.json
    ```
-6. **Keep it only if** every row is `same`, the glint geomean is at most 0.95 of the baseline, no query is more than 1.10 slower, and index time and size grow less than 10%. Otherwise revert.
+6. **Keep it only if** every row is `same`, the glint geomean is at most 0.95 of the baseline (or equal with fewer lines), no query is more than 1.10 slower, and index time and size grow less than 10%. Otherwise revert.
 7. **Commit** one change with its number, e.g. `perf: skip stat for unchanged dirs (0.91x)`. Add a row to the log, and `new.json` becomes `base.json`.
 
 ## Where the time goes
