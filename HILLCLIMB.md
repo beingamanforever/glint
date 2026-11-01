@@ -60,6 +60,10 @@ Apple M5, 10 cores, 98,023 files, 1.25 GB:
 | More threads than cores for I/O | noisy, no consistent gain | rejected |
 | tgrep next-character masks | helps 2 of 10 queries; about 2.8x index size | not yet |
 | Sparse n-grams (Cursor) | posting-list work is a small share today | not yet |
+| Hand out files to threads in chunks | `stat` 57 ms and open+read 1.5-1.7 s at any chunk size | rejected |
+| Overlap the `stat` pass with verify | 4-11 ms faster below 2,500 candidates, 46 ms slower at 24,500 | rejected |
+| `stat` on 4 threads (the performance cores) | 46 ms vs 57 ms alone, no gain inside glint | rejected |
+| Paths as pointers into mapped `files.bin` | bench 0.924, `--no-fresh` 0.858, but `return None` 1.10x; interleaved A/B: 3-4 ms off each `--no-fresh` query, about 1.5 ms off `glint` | rejected by the 1.10 rule |
 
 ## Open ideas
 
