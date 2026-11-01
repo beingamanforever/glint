@@ -22,7 +22,7 @@ Paste this into a fresh session at the repo root:
 ```bash
 make
 python3 bench/corpus.py ~/glint-corpus ~/.cache/uv/archive-v0/*      # build once, then reuse
-python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json base.json
+python3 bench/bench.py ~/glint-corpus --runs 5 --skip rg --skip "grep -r" --skip "git grep" --skip "glint --no-index" --json base.json
 ```
 
 ## Loop
@@ -30,24 +30,27 @@ python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json base.json
 1. **Profile, warm.** Run each query once to warm the page cache and discard it, then profile the median of the next 5 runs.
    `./glint --stats PATTERN ~/glint-corpus` splits a query into `plan_ms` (stamps and lookups) and verify (`total_ms - plan_ms`).
    Compare `candidates` with `matched_files`: a large gap means the index lets too much through.
-   For hot functions, use `sample glint 5` or Instruments on macOS, and `perf record -g` on Linux, also after a warm-up run.
+   Most queries finish in 20-500 ms, too fast for `sample`. Time phases in a scratch copy, or loop one query under `sample` (macOS) or `perf record -g` (Linux).
 2. **Pick the biggest measured cost.** Write down the number it should move.
 3. **Microbenchmark the idea** in a scratch file before touching glint. Most ideas die here, cheaply.
 4. **Change glint.** `make` must stay free of warnings.
-5. **Bench against the baseline:**
+5. **Check, then bench.** Correctness against ripgrep once, then timing without it, since ripgrep's full scans disturb the cache between rows:
    ```bash
-   python3 bench/bench.py ~/glint-corpus --runs 5 --skip "grep -r" --json new.json --compare base.json
+   python3 bench/bench.py ~/glint-corpus --runs 1 --skip "grep -r" --skip "git grep"
+   python3 bench/bench.py ~/glint-corpus --runs 5 --skip rg --skip "grep -r" --skip "git grep" --skip "glint --no-index" --json new.json --compare base.json
    ```
-6. **Keep it only if** every row is `same`, the glint geomean is at most 0.95 of the baseline (or equal with fewer lines), no query is more than 1.10 slower, and index time and size grow less than 10%. Otherwise revert.
+6. **Keep it only if** every row is `same` (`capped` for `-m 20`), the `glint` row's geomean is at most 0.95 of the baseline (or equal with fewer lines), and index time and size grow less than 10%.
+   A query more than 1.10 slower is rerun interleaved (base, new, base, new); reject only if the slowdown reproduces. Otherwise revert.
 7. **Commit** one change with its number, e.g. `perf: skip stat for unchanged dirs (0.91x)`. Add a row to the log, and `new.json` becomes `base.json`.
 
 ## Where the time goes
 
-Apple M5, 10 cores, 98,023 files, 1.25 GB:
+Apple M5, 98,023 files, 1.25 GB, measured warm on 2026-11-01. This Mac runs three endpoint-security agents, which is why `open()` is slow; expect different numbers elsewhere.
 
-- About 52 ms per query: one `stat` per file to catch edits. `--no-fresh` skips it.
-- About 9 ms: reading `files.bin` into memory.
-- Verify: about 31 µs per candidate file, mostly `open` and `read`. A full scan takes about 3 s, which is the I/O floor.
+- Process start: about 11 ms for any process; glint adds about 4 ms at start and exit.
+- Freshness: one `stat` per file, about 55 ms per query. It stops scaling past about 4 threads. `--no-fresh` skips it.
+- Loading the index (`files.bin` and the maps): about 4.4 ms. Trigram lookups: 0.2-1.9 ms.
+- Verify: `open()` costs about 53 µs single-threaded, or 15-17 µs per candidate file at 10 threads; `read` adds about 3%. A full scan alone takes about 1.7 s.
 
 ## Tried
 
@@ -55,7 +58,7 @@ Apple M5, 10 cores, 98,023 files, 1.25 GB:
 |---|---|---|
 | `getattrlistbulk` instead of `stat` | 283 ms vs 52 ms | rejected |
 | `fstatat` on a directory fd | 88 ms vs 54 ms at 10 threads | rejected |
-| `string_view` paths instead of `string` | 9.7 ms vs 8.7 ms | no gain |
+| `string_view` paths instead of `string` (time to split `files.bin`) | 9.7 ms with views vs 8.7 ms with strings | no gain |
 | `mmap` instead of `read` for candidates | no consistent gain | rejected |
 | More threads than cores for I/O | noisy, no consistent gain | rejected |
 | tgrep next-character masks | helps 2 of 10 queries; about 2.8x index size | not yet |
@@ -64,6 +67,8 @@ Apple M5, 10 cores, 98,023 files, 1.25 GB:
 | Overlap the `stat` pass with verify | 4-11 ms faster below 2,500 candidates, 46 ms slower at 24,500 | rejected |
 | `stat` on 4 threads (the performance cores) | 46 ms vs 57 ms alone, no gain inside glint | rejected |
 | Paths as pointers into mapped `files.bin` | bench 0.924, `--no-fresh` 0.858, but `return None` 1.10x; interleaved A/B: 3-4 ms off each `--no-fresh` query, about 1.5 ms off `glint` | rejected by the 1.10 rule |
+
+Ideas that die in a microbenchmark go in this table too, with what was timed.
 
 ## Open ideas
 
@@ -76,4 +81,5 @@ Apple M5, 10 cores, 98,023 files, 1.25 GB:
 
 | Date | Model | Change | Geomean vs baseline | Commit |
 |---|---|---|---|---|
+| 2026-11-01 | Claude Opus 5.5 (max) | first test round: zero-copy paths, reverted (3-4 ms, within noise) | 1.00 | a16ffcf |
 | 2026-11-01 | Claude Opus 5.5 | baseline: 13.7x faster than ripgrep (26.1x with `--no-fresh`), 98,023 files | 1.00 | 3e06c25 |
