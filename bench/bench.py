@@ -31,7 +31,7 @@ def timed(argv, cwd):
 
 
 def matches(out):
-    return {(m[1].removeprefix("./"), int(m[2])) for m in re.finditer(r"^(.+?):(\d+):", out, re.M)}
+    return {(m[1].removeprefix("./"), int(m[2])) for m in re.finditer(r"^\s*(.+?):(\d+)(?=[:\s])", out, re.M)}
 
 
 def geomean(xs):
